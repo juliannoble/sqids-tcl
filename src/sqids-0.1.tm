@@ -1,28 +1,47 @@
-package require tcl 8.6-
+package require Tcl 8.6-
+
+#MIT license
+#Julian Noble 2026
+
+#example:
+# % package require sqids
+# % set s [sqids::sqids new]
+#   ::oo::Obj275
+# % $s encode {1 2 3}
+#   86Rf07
+# % $s decode 86Rf07
+#   1 2 3
+
 
 namespace eval sqids {
     oo::class create sqids {
         variable o_alphabet
+        variable o_alpha_re
         variable o_minlength
         variable o_blocklist
         constructor {args} {
-            set defaults [dict create\
-                -alphabet ""\
-                -minlength ""\
-                -blocklist ""\
-            ]
+            set defaults [dict create {*}{
+                -alphabet   ""
+                -minlength  ""
+                -blocklist  ""
+            }]
             if {[llength $args] %2 !=0} {
                 error "sqids constructor: Require option value pairs. Known options:[dict keys $defaults]."
             }
-            set opts [dict merge $defaults $args]
-            dict for {k v} $opts {
-                switch -exact -- $k {
-                    -alphabet - -minlength - -blocklist {}
+            set useropts [dict create]
+            dict for {k v} $args {
+                set fullmatch [tcl::prefix::match -error "" {-alphabet -minlength -blocklist} $k]
+                switch -exact -- $fullmatch {
+                    -alphabet - -minlength - -blocklist {
+                        dict set useropts $fullmatch $v
+                    }
                     default {
                         error "sqids constructor: unknown option '$k'. Known options:[dict keys $defaults]."
                     }
                 }
             }
+            set opts [dict merge $defaults $useropts]
+
             set opt_alphabet    [dict get $opts -alphabet]
             if {$opt_alphabet eq ""} {
                 set o_alphabet $::sqids::data::default_alphabet
@@ -36,7 +55,10 @@ namespace eval sqids {
                 }
                 set o_alphabet $opt_alphabet
             }
-            set o_alphabet [my shuffle $o_alphabet]
+            set alphamatch [string map [list . \\. \[ \\\[ \] \\\] \{ \\\{ \} \\\}] $o_alphabet] ;#review
+            set o_alpha_re "^\[$alphamatch\]+\$"
+
+            set o_alphabet [my shuffle $o_alphabet[set o_alphabet {}]]
 
             set opt_minlength   [dict get $opts -minlength]
             if {$opt_minlength eq ""} {
@@ -67,9 +89,9 @@ namespace eval sqids {
         }
         method encode {numlist} {
             if {[llength $numlist] == 0} {return}
-            return [my EncodeNumbers $numlist 0]
+            return [my EncodeNumbers $numlist]
         }
-        method EncodeNumbers {numlist increment} {
+        method EncodeNumbers {numlist {increment 0}} {
             if {$increment > [string length $o_alphabet]} {
                 error "sqids EncodeNumbers: Reached max attempts to re-generate the ID"
             }
@@ -92,13 +114,13 @@ namespace eval sqids {
                 append id [my ToId $num [string range $alpha 1 end]]
                 if {$i < [llength $numlist]-1} {
                     append id [string index $alpha 0] 
-                    set alpha [my shuffle $alpha]
+                    set alpha [my shuffle $alpha[set alpha {}]]
                 }
             }
             if {$o_minlength > [string length $id]} {
                 append id [string index $alpha 0]
                 while {$o_minlength - [string length $id] > 0} {
-                    set alpha [my shuffle $alpha]
+                    set alpha [my shuffle $alpha[set alpha {}]]
                     set numchars [expr {min($o_minlength - [string length $id],[string length $alpha])}]; #review alpha vs o_alphabet
                     append id [string range $alpha 0 $numchars-1]
                 }
@@ -109,7 +131,13 @@ namespace eval sqids {
             return $id
         }
         method is_blocked {id} {
-            #todo
+            set idtest [string tolower $id]
+            set idlen [string length $idtest]
+            foreach blocked $o_blocklist {
+                if {[string first $blocked $idtest] != -1} {
+                    return 1
+                }
+            }
             return 0
         }
         method ToId {num alpha} {
@@ -118,38 +146,45 @@ namespace eval sqids {
                 set str [string index $alpha [expr {$num % [string length $alpha]}]]
                 set id ${str}$id
                 set num [expr {$num / [string length $alpha]}]
-                if {! $num > 0} break
+                if {!($num > 0)} break
             }
+            return $id
         }
         method ToNumber {id alpha} {
             set number 0
-            for {set i 0} {$i < [strling length $id]} {incr i} {
-                set posn [string first [lindex $id $i] $alpha]
-                set number [expr {($num * [string length $alpha]) + $posn}]
+            for {set i 0} {$i < [string length $id]} {incr i} {
+                set posn [string first [string index $id $i] $alpha]
+                set number [expr {($number * [string length $alpha]) + $posn}]
             }
             return $number
         }
         #consistent shuffle (always produce the same result for same input)
         method shuffle {alpha} {
-            for {set i 0; set j [expr {[string length $alpha]-1}]} {$j > 0} {incr i; incr j -1} {
+            set alpha_len [string length $alpha]
+            for {set i 0; set j [expr {$alpha_len-1}]} {$j > 0} {incr i; incr j -1} {
                 set iv [scan [string index $alpha $i] %c]
                 set jv [scan [string index $alpha $j] %c]
-                set r [expr {($i * $j + $iv + $jv) % [string length $alpha]}]
-                set alpha_charlist [split $alpha ""]
-                #lswap
-                set item2 [lindex $alpha_charlist $r]
-                lset alpha_charlist $r [lindex $alpha_charlist $i]
-                lset alpha_charlist $i $item2
-                set alpha [join $alpha_charlist ""]
+                set r [expr {($i * $j + $iv + $jv) % $alpha_len}]
+
+                set item2 [string index $alpha $r]
+                set alpha [string replace $alpha $r $r [string index $alpha $i]]
+                set alpha [string replace $alpha $i $i $item2]
+
+                #set alpha_charlist [split $alpha ""]
+                ##lswap
+                #set item2 [lindex $alpha_charlist $r]
+                #lset alpha_charlist $r [lindex $alpha_charlist $i]
+                #lset alpha_charlist $i $item2
+                #set alpha [join $alpha_charlist ""]
             }
             return $alpha
         }
         method decode {id} {
             if {$id eq ""} {return}
             set result [list]
-            set match [string map [list . \\. \[ \\\[ \] \\\] \{ \\\{ \} \\\}] $o_alphabet] ;#review
-            set re "^\[$o_alphabet]\]+\$"
-            if {![regexp $re $id]} {
+
+            if {![regexp $o_alpha_re $id]} {
+                puts stderr "sqids decode: ID contains characters not in the alphabet. re: $re id: $id"
                 return [list]
             }
             set prefix [string index $id 0]
@@ -159,13 +194,27 @@ namespace eval sqids {
             set id [string range $id 1 end]
             while {[string length $id] > 0} {
                 set separator [string index $alpha 0]
-                set parts [split $id $separator]
-                if {[llength $parts] > 1} {
+                #split on first occurrence of separator only.
+                set sep_posn [string first $separator $id]
+                if {$sep_posn == -1} {
+                    set parts [list $id]
+                } else {
+                    set parts [list [string range $id 0 $sep_posn-1] [string range $id $sep_posn+1 end]]
                 }
-                #todo
+                #assert parts has 1 or 2 elements
 
+                if {[lindex $parts 0] eq ""} {
+                    #separator was at start of the id - done.
+                    return $result
+                }
+                lappend result [my ToNumber [lindex $parts 0] [string range $alpha 1 end]]
+                if {[llength $parts] == 2} {
+                    set alpha [my shuffle $alpha[set alpha {}]]
+                    set id [lindex $parts 1]
+                } else {
+                    set id ""
+                }
             }
-
             return $result
         }
     }
@@ -174,9 +223,8 @@ namespace eval sqids::lib {
 
 }
 namespace eval sqids::data {
-    #variable alphabet_chars {abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789}
-    variable default_alphabet {1n8pjRsHiOL7dtAgc0ker9KQI4xTDMwfEXYuJbm5VNvZUSq2PlGaCW3zB6hoyF}
-    variable default_minlength 3
+    variable default_alphabet {abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789}
+    variable default_minlength 0
     variable default_blocklist {
         0rgasm
         1d10t
