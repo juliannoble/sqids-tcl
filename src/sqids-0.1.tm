@@ -29,11 +29,18 @@ namespace eval sqids {
                 error "sqids constructor: Require option value pairs. Known options:[dict keys $defaults]."
             }
             set useropts [dict create]
+            set explicit_empty_blocklist 0 ;#as opposed to default due to being unspecified.
             dict for {k v} $args {
                 set fullmatch [tcl::prefix::match -error "" {-alphabet -minlength -blocklist} $k]
                 switch -exact -- $fullmatch {
-                    -alphabet - -minlength - -blocklist {
+                    -alphabet - -minlength {
                         dict set useropts $fullmatch $v
+                    }
+                    -blocklist {
+                        if {[llength $v] == 0} {
+                            set explicit_empty_blocklist 1
+                        }
+                        dict set useropts -blocklist $v
                     }
                     default {
                         error "sqids constructor: unknown option '$k'. Known options:[dict keys $defaults]."
@@ -71,7 +78,7 @@ namespace eval sqids {
                 set o_minlength $opt_minlength
             }
             set opt_blocklist [dict get $opts -blocklist]
-            if {$opt_blocklist eq ""} {
+            if {!$explicit_empty_blocklist && $opt_blocklist eq ""} {
                 set o_blocklist $::sqids::data::default_blocklist
             } else {
                 set o_blocklist $opt_blocklist
@@ -89,6 +96,12 @@ namespace eval sqids {
         }
         method encode {numlist} {
             if {[llength $numlist] == 0} {return}
+            #cannot encode negative numbers, or non-integers.
+            foreach num $numlist {
+                if {![string is integer -strict $num] || $num < 0} {
+                    error "sqids encode: can only encode non-negative integers. Invalid value: '$num'"
+                }
+            }
             return [my EncodeNumbers $numlist]
         }
         method EncodeNumbers {numlist {increment 0}} {
@@ -131,11 +144,40 @@ namespace eval sqids {
             return $id
         }
         method is_blocked {id} {
+            if {![llength $o_blocklist]} {
+                return 0
+            }
             set idtest [string tolower $id]
             set idlen [string length $idtest]
-            foreach blocked $o_blocklist {
-                if {[string first $blocked $idtest] != -1} {
+            if {$idlen < 3} {
+                #sqids rule: short ids less than 3 chars will not be blocked.
+                return 0
+            }
+            if {$idlen == 3} {
+                if {$idtest in $o_blocklist} {
                     return 1
+                }
+            } else {
+                foreach blocked $o_blocklist {
+                    set posn [string first $blocked $idtest]
+                    if {$posn == -1} {
+                        continue
+                    }
+                    if {$posn == 0} {
+                        #whether leetspeak or not, blocklist entries that match at the beginning of the id will be blocked.
+                        return 1
+                    }
+                    if {[regexp {[0-9]} $blocked]} {
+                        #sqids rule: blocklist entries with digits (leetspeak) will only be blocked if the match is at the beginning or end of the id.
+                        #we've already checked the beginning, so check the end now.
+                        set endpos [expr {$idlen - [string length $blocked]}]
+                        if {$posn == $endpos} {
+                            return 1
+                        }
+                    } else {
+                        #sqids rule: blocklist entries without digits will be blocked if they match anywhere in the id.
+                        return 1
+                    }
                 }
             }
             return 0
