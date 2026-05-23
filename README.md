@@ -12,7 +12,6 @@ ie in one of the folders listed in tcl::tm::list
 ## Examples
 
 Simple encode and decode at the tclsh prompt:
-
 ```tcl
 % package require sqids
   0.1
@@ -22,6 +21,13 @@ Simple encode and decode at the tclsh prompt:
   86Rf07
 % s1 decode 86Rf07
   1 2 3
+```
+
+simple encode with non-default parameters:
+```tcl
+package require sqids
+sqids::idscope create s2 -alphabet {abcdef0123456789} -minlength 6 -blocklist {} 
+set idstring [s2 encode {1 2 3}] ;#a83a2e
 ```
 
 ## License
