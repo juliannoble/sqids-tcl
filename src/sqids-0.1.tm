@@ -5,16 +5,16 @@ package require Tcl 8.6-
 
 #example:
 # % package require sqids
-# % set s [sqids::sqids new]
+# % set s1 [sqids::idscope new]
 #   ::oo::Obj275
-# % $s encode {1 2 3}
+# % $s1 encode {1 2 3}
 #   86Rf07
-# % $s decode 86Rf07
+# % $s1 decode 86Rf07
 #   1 2 3
 
 
 namespace eval sqids {
-    oo::class create sqids {
+    oo::class create idscope {
         variable o_alphabet
         variable o_alpha_re
         variable o_minlength
@@ -26,7 +26,7 @@ namespace eval sqids {
                 -blocklist  ""
             }]
             if {[llength $args] %2 !=0} {
-                error "sqids constructor: Require option value pairs. Known options:[dict keys $defaults]."
+                error "sqids::idscope constructor: Require option value pairs. Known options:[dict keys $defaults]."
             }
             set useropts [dict create]
             set explicit_empty_blocklist 0 ;#as opposed to default due to being unspecified.
@@ -43,7 +43,7 @@ namespace eval sqids {
                         dict set useropts -blocklist $v
                     }
                     default {
-                        error "sqids constructor: unknown option '$k'. Known options:[dict keys $defaults]."
+                        error "sqids::idscope constructor: unknown option '$k'. Known options:[dict keys $defaults]."
                     }
                 }
             }
@@ -55,10 +55,10 @@ namespace eval sqids {
             } else {
                 #todo - deny multibyte - regex
                 if {[string length $opt_alphabet] < 3} {
-                    error "sqids constructor: -alphabet length must be at least 3."
+                    error "sqids::idscope constructor: -alphabet length must be at least 3."
                 }
                 if {[regexp {(.).*\1} $opt_alphabet]} {
-                    error "sqids constructor: -alphabet must contain unique characters."
+                    error "sqids::idscope constructor: -alphabet must contain unique characters."
                 }
                 set o_alphabet $opt_alphabet
             }
@@ -184,42 +184,40 @@ namespace eval sqids {
         }
         method ToId {num alpha} {
             set id ""
+            set alpha_len [string length $alpha]
             while 1 {
-                set str [string index $alpha [expr {$num % [string length $alpha]}]]
-                set id ${str}$id
-                set num [expr {$num / [string length $alpha]}]
-                if {!($num > 0)} break
+                set id [string index $alpha [expr {$num % $alpha_len}]]$id
+                set num [expr {$num / $alpha_len}]
+                if {$num == 0} break
             }
             return $id
         }
         method ToNumber {id alpha} {
             set number 0
+            set alpha_len [string length $alpha]
             for {set i 0} {$i < [string length $id]} {incr i} {
                 set posn [string first [string index $id $i] $alpha]
-                set number [expr {($number * [string length $alpha]) + $posn}]
+                set number [expr {($number * $alpha_len) + $posn}]
             }
             return $number
         }
         #consistent shuffle (always produce the same result for same input)
         method shuffle {alpha} {
             set alpha_len [string length $alpha]
-            for {set i 0; set j [expr {$alpha_len-1}]} {$j > 0} {incr i; incr j -1} {
-                set iv [scan [string index $alpha $i] %c]
-                set jv [scan [string index $alpha $j] %c]
-                set r [expr {($i * $j + $iv + $jv) % $alpha_len}]
-
-                set item2 [string index $alpha $r]
-                set alpha [string replace $alpha $r $r [string index $alpha $i]]
-                set alpha [string replace $alpha $i $i $item2]
-
-                #set alpha_charlist [split $alpha ""]
-                ##lswap
-                #set item2 [lindex $alpha_charlist $r]
-                #lset alpha_charlist $r [lindex $alpha_charlist $i]
-                #lset alpha_charlist $i $item2
-                #set alpha [join $alpha_charlist ""]
+            if {$alpha_len < 2} {
+                return $alpha
             }
-            return $alpha
+            set chars [split $alpha ""]
+
+            for {set i 0; set j [expr {$alpha_len-1}]} {$j > 0} {incr i; incr j -1} {
+                set iv [scan [lindex $chars $i] %c]
+                set jv [scan [lindex $chars $j] %c]
+                set r [expr {($i * $j + $iv + $jv) % $alpha_len}]
+                set item2 [lindex $chars $r]
+                lset chars $r [lindex $chars $i]
+                lset chars $i $item2
+            }
+            return [join $chars ""]
         }
         method decode {id} {
             if {$id eq ""} {return}
@@ -260,9 +258,6 @@ namespace eval sqids {
             return $result
         }
     }
-}
-namespace eval sqids::lib {
-
 }
 namespace eval sqids::data {
     variable default_alphabet {abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789}
