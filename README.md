@@ -3,10 +3,25 @@
 Sqids (pronounced "squids") is a small library that lets you generate YouTube-looking IDs from numbers. It's good for link shortening, fast & URL-safe ID generation and decoding back into numbers for quicker database lookups.
 
 ## Getting started
+Generate versioned .tm file(s) from src/modules using:
+```
+tclsh src/make.tcl
+```
 
-place sqids-0.1.tm file in your module path.
+Either:  
+* copy the sqids-XXX.tm file to a Tcl module path  
+   (ie add to one of the existing folders as shown by the command: tcl::tm::list)  
+*  add this folder to your module path during script run  
+   e.g  
+   ```tcl
+   tcl::tm::add /projects/squids-tcl/modules
+   package require sqids
+   ...
+   ```
+*  update your default module path by setting the appropriate env var  
+  e.g   
+  set the variable TCL9_0_TM_PATH  to /projects/squids-tcl/modules  
 
-ie in one of the folders listed in tcl::tm::list
 
 
 ## Examples

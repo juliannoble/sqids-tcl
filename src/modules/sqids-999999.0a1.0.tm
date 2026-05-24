@@ -1,3 +1,4 @@
+#Do not update version of this file. Update sqids-buildversion.txt and run make.tcl to update the version in this file and copy to modules folder.
 package require Tcl 8.6-
 
 #MIT license
@@ -16,9 +17,11 @@ package require Tcl 8.6-
 namespace eval sqids {
     oo::class create idscope {
         variable o_alphabet
+        variable o_alphabet_configured
         variable o_alpha_re
         variable o_minlength
         variable o_blocklist
+        #note that methods beginning with uppercase letters are private.
         constructor {args} {
             set defaults [dict create {*}{
                 -alphabet   ""
@@ -62,8 +65,9 @@ namespace eval sqids {
                 }
                 set o_alphabet $opt_alphabet
             }
+            set o_alphabet_configured $o_alphabet ;#for use in public method alphabet, which returns the configured alphabet in the order it was configured, not the shuffled order used for encoding.
             set alphamatch [string map [list . \\. \[ \\\[ \] \\\] \{ \\\{ \} \\\}] $o_alphabet] ;#review
-            set o_alpha_re "^\[$alphamatch\]+\$"
+            set o_alpha_re "^\[$alphamatch\]+\$" ;#independent of shuffled order.
 
             set o_alphabet [my shuffle $o_alphabet[set o_alphabet {}]]
 
@@ -83,21 +87,40 @@ namespace eval sqids {
             } else {
                 set o_blocklist $opt_blocklist
             }
+            set o_blocklist [string tolower $o_blocklist]
 
         }
-        method alphabet {} {
-            return $o_alphabet
-        }
-        method minlength {} {
-            return $o_minlength
-        }
-        method blocklist_size {} {
-            llength $o_blocklist
+        method config {{option {}}} {
+            #introspection method.
+            #return a dict of the configured options if no option specified, otherwise return the value of the specified option.
+
+            #no facility is provided to change options after construction as a new idscope object should be used for different configurations (different scope of sqid ids).
+            #note that -alphabet refers to the configured alphabet in the order it was configured, not the shuffled order used for encoding.
+            if {$option eq ""} {
+                #
+                return [dict create                     {*}{
+                    } -blocklist $o_blocklist           {*}{
+                    } -minlength $o_minlength           {*}{
+                    } -alphabet $o_alphabet_configured  {*}{
+                    }
+                ]
+            }
+            set fullmatch [tcl::prefix::match -error "" {-alphabet -minlength -blocklist} $option]
+            switch -exact -- $fullmatch {
+                -alphabet   {return $o_alphabet_configured}
+                -minlength  {return $o_minlength}
+                -blocklist  {return $o_blocklist}
+                default {
+                    error "sqids::idscope config: unknown option '$option'. Known options:-alphabet -minlength -blocklist."
+                }
+            }
         }
         method encode {numlist} {
             if {[llength $numlist] == 0} {return}
             #cannot encode negative numbers, or non-integers.
             foreach num $numlist {
+                #tcl 9 'string is integer' supports bignums - which can be arbitrarily large.
+                #tcl 8.6 'string is integer' is limited to 2**32-1
                 if {![string is integer -strict $num] || $num < 0} {
                     error "sqids encode: can only encode non-negative integers. Invalid value: '$num'"
                 }
@@ -105,18 +128,23 @@ namespace eval sqids {
             return [my EncodeNumbers $numlist]
         }
         method EncodeNumbers {numlist {increment 0}} {
-            if {$increment > [string length $o_alphabet]} {
+            #assert number of letters in o_alphabet and number of letters in local alpha are the same and don't effectively change during this function.
+            #('set alpha {}' in calls to my shuffle is an optimization to avoid shared string and copy-on-write overhead. As alpha is set to the result, it doesn't violate the previous assertion.)
+            set alpha_len [string length $o_alphabet]
+
+            if {$increment > $alpha_len} {
                 error "sqids EncodeNumbers: Reached max attempts to re-generate the ID"
             }
+
             set offset [llength $numlist]
             set i -1
             foreach v $numlist {
                 incr i
-                set x [scan [string index $o_alphabet [expr {$v % [string length $o_alphabet]}]] %c]
+                set x [scan [string index $o_alphabet [expr {$v % $alpha_len}]] %c]
                 set offset [expr {$offset + $x + $i}]
             }
-            set offset  [expr {$offset % [string length $o_alphabet]}]
-            set offset [expr {($offset + $increment) % [string length $o_alphabet]}]
+            set offset  [expr {$offset % $alpha_len}]
+            set offset [expr {($offset + $increment) % $alpha_len}]
             set alpha [string range $o_alphabet $offset end][string range $o_alphabet 0 $offset-1]
             set prefix [string index $alpha 0]
             set alpha [string reverse $alpha]
@@ -134,7 +162,7 @@ namespace eval sqids {
                 append id [string index $alpha 0]
                 while {$o_minlength - [string length $id] > 0} {
                     set alpha [my shuffle $alpha[set alpha {}]]
-                    set numchars [expr {min($o_minlength - [string length $id],[string length $alpha])}]; #review alpha vs o_alphabet
+                    set numchars [expr {min($o_minlength - [string length $id],$alpha_len)}]
                     append id [string range $alpha 0 $numchars-1]
                 }
             }
@@ -144,9 +172,11 @@ namespace eval sqids {
             return $id
         }
         method is_blocked {id} {
+            #deliberately public method.
             if {![llength $o_blocklist]} {
                 return 0
             }
+            #o_blocklist is stored in lowercase, so compare against lowercase id.
             set idtest [string tolower $id]
             set idlen [string length $idtest]
             if {$idlen < 3} {
@@ -159,6 +189,11 @@ namespace eval sqids {
                 }
             } else {
                 foreach blocked $o_blocklist {
+                    if {[string length $blocked] <= 3} {
+                        #sqids rule: blocklist entries of 3 chars  will only be blocked if they match the entire id exactly,
+                        #so skip them in this loop as we've already checked for exact matches of the whole id when idlen == 3.  
+                        continue
+                    }
                     set posn [string first $blocked $idtest]
                     if {$posn == -1} {
                         continue
@@ -201,8 +236,10 @@ namespace eval sqids {
             }
             return $number
         }
-        #consistent shuffle (always produce the same result for same input)
         method shuffle {alpha} {
+            #public method. Primarily for internal use but can be used externally to examine the shuffled alphabet being used for encoding.
+            #e.g myscopeobject shuffle [myscopeobject config -alphabet] would show the shuffled alphabet being used for encoding.
+            #consistent shuffle (always produce the same result for same input)
             set alpha_len [string length $alpha]
             if {$alpha_len < 2} {
                 return $alpha
@@ -224,7 +261,7 @@ namespace eval sqids {
             set result [list]
 
             if {![regexp $o_alpha_re $id]} {
-                puts stderr "sqids decode: ID contains characters not in the alphabet. re: $re id: $id"
+                puts stderr "sqids decode: ID contains characters not in the alphabet. re: $o_alpha_re id: $id"
                 return [list]
             }
             set prefix [string index $id 0]
@@ -826,8 +863,7 @@ namespace eval sqids::data {
     }
 }
 
-
 package provide sqids [namespace eval sqids {
     variable version
-    set version 0.1
+    set version 999999.0a1.0
 }]
