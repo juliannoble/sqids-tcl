@@ -58,11 +58,15 @@ namespace eval ::testspace {
 
     test "multibyte characters" {Test multibyte entry in alphabet raises error}\
         -setup $common -body {
+            set errmatch "*must not contain multibyte*"
             if {[catch {
                 set s [sqids::idscope new -alphabet "ë1092"]
             } errMsg]} {
-                #todo - check error message contains the word 'multibyte' or similar
-                lappend result "OK expected_error"
+                if {[string match $errmatch $errMsg]} {
+                    lappend result "OK expected_error"
+                } else {
+                    lappend result "FAIL: Unexpected error message: '$errMsg'"
+                }
             } else {
                 lappend result "FAIL: Expected error was not raised"
             }
@@ -76,11 +80,15 @@ namespace eval ::testspace {
 
     test "repeating alphabet characters" {Test repeated entry in alphabet raises error}\
         -setup $common -body {
+            set errmatch "*must contain unique*"
             if {[catch {
                 set s [sqids::idscope new -alphabet "aabcdefg"]
             } errMsg]} {
-                #todo - check error message contains the word 'unique' or similar
-                lappend result "OK expected_error"
+                if {[string match $errmatch $errMsg]} {
+                    lappend result "OK expected_error"
+                } else {
+                    lappend result "FAIL: Unexpected error message: '$errMsg'"
+                }
             } else {
                 lappend result "FAIL: Expected error was not raised"
             }
@@ -94,11 +102,15 @@ namespace eval ::testspace {
 
     test "too short of an alphabet" {Test too short alphabet raises error}\
         -setup $common -body {
+            set errmatch "*length must be at least*"
             if {[catch {
                 set s [sqids::idscope new -alphabet "ab"]
             } errMsg]} {
-                #todo - check error message 
-                lappend result "OK expected_error"
+                if {[string match $errmatch $errMsg]} {
+                    lappend result "OK expected_error"
+                } else {
+                    lappend result "FAIL: Unexpected error message: '$errMsg'"
+                }
             } else {
                 lappend result "FAIL: Expected error was not raised"
             }

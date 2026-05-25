@@ -56,9 +56,12 @@ namespace eval sqids {
             if {$opt_alphabet eq ""} {
                 set o_alphabet $::sqids::data::default_alphabet
             } else {
-                #todo - deny multibyte - regex
                 if {[string length $opt_alphabet] < 3} {
                     error "sqids::idscope constructor: -alphabet length must be at least 3."
+                }
+                #review - deny multibyte
+                if {[regexp {[^\u00-\u7F]} $opt_alphabet]} {
+                    error "sqids::idscope constructor: -alphabet must not contain multibyte characters."
                 }
                 if {[regexp {(.).*\1} $opt_alphabet]} {
                     error "sqids::idscope constructor: -alphabet must contain unique characters."
