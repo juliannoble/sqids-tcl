@@ -51,7 +51,7 @@ which is a huge number but can still be encoded within a couple of hundred micro
 
 Numbers can be arbitrarily large at the cost of memory and encode/decode speed.
 
-To globally configure the default for all sqids::idscope intances to a smaller
+To globally configure the default for all sqids::idscope instances to a smaller
 number to match some other language
 e.g
 ```tcl

@@ -137,6 +137,37 @@ namespace eval ::testspace {
             1 1 1 1 1 1 1 1 1 1
         }]
 
+    test "incremental numbers, same index 1" {Test encode decode pairs 0-9 and 0 default alphabet}\
+        -setup $common -body {
+            set s [sqids::idscope new]
+            set num_dict [dict create {*}{
+                SvIz {0 0}
+                nWqP {1 0}
+                tSyw {2 0}
+                eX68 {3 0}
+                rxCY {4 0}
+                sV8a {5 0}
+                uf2K {6 0}
+                7Cdk {7 0}
+                3aWP {8 0}
+                m2xn {9 0}
+            }]
+
+            dict for {id numlist} $num_dict {
+                 lappend result [string equal [$s encode $numlist] $id]
+                 lappend result [string equal [$s decode $id] $numlist]
+            }
+
+            set result
+        }\
+        -cleanup {
+            $s destroy
+        }\
+        -result [list {*}{
+            1 1 1 1 1 1 1 1 1 1
+            1 1 1 1 1 1 1 1 1 1
+        }]
+
     test "multi input" {Test encode decode roundtrip 100 numbers with default alphabet}\
         -setup $common -body {
             set s [sqids::idscope new]
