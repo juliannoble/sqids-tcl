@@ -21,12 +21,14 @@ namespace eval sqids {
         variable o_alpha_re
         variable o_minlength
         variable o_blocklist
+        variable o_maxsafeinteger
         #note that methods beginning with uppercase letters are private.
         constructor {args} {
             set defaults [dict create {*}{
-                -alphabet   ""
-                -minlength  ""
-                -blocklist  ""
+                -alphabet       ""
+                -minlength      ""
+                -blocklist      ""
+                -maxsafeinteger ""
             }]
             if {[llength $args] %2 !=0} {
                 error "sqids::idscope constructor: Require option value pairs. Known options:[dict keys $defaults]."
@@ -34,9 +36,9 @@ namespace eval sqids {
             set useropts [dict create]
             set explicit_empty_blocklist 0 ;#as opposed to default due to being unspecified.
             dict for {k v} $args {
-                set fullmatch [tcl::prefix::match -error "" {-alphabet -minlength -blocklist} $k]
+                set fullmatch [tcl::prefix::match -error "" {-alphabet -minlength -blocklist -maxsafeinteger} $k]
                 switch -exact -- $fullmatch {
-                    -alphabet - -minlength {
+                    -alphabet - -minlength - -maxsafeinteger {
                         dict set useropts $fullmatch $v
                     }
                     -blocklist {
@@ -87,10 +89,27 @@ namespace eval sqids {
             set opt_blocklist [dict get $opts -blocklist]
             if {!$explicit_empty_blocklist && $opt_blocklist eq ""} {
                 set o_blocklist $::sqids::data::default_blocklist
+                #default blocklist is already in lowercase.
             } else {
                 set o_blocklist $opt_blocklist
+                set o_blocklist [string tolower $o_blocklist]
             }
-            set o_blocklist [string tolower $o_blocklist]
+            set opt_maxsafeinteger [dict get $opts -maxsafeinteger]
+            if {$opt_maxsafeinteger eq ""} {
+                set o_maxsafeinteger $::sqids::data::MAX_SAFE_INTEGER
+            } else {
+                #accept arbitrarily large values as long as they're valid bignum integers.
+                if {[package vsatisfies [info tclversion] 8.7-]} {
+                    if {![string is integer -strict $opt_maxsafeinteger] || $opt_maxsafeinteger < 0} {
+                        error "sqids constructor: -maxsafeinteger must be a non-negative integer."
+                    }
+                } else {
+                    if {![string is entier -strict $opt_maxsafeinteger] || $opt_maxsafeinteger < 0} {
+                        error "sqids constructor: -maxsafeinteger must be a non-negative integer."
+                    }
+                }
+                set o_maxsafeinteger $opt_maxsafeinteger
+            }
 
         }
         method config {{option {}}} {
@@ -103,32 +122,51 @@ namespace eval sqids {
                 #
                 return [dict create                     {*}{
                     } -blocklist $o_blocklist           {*}{
+                    } -maxsafeinteger $o_maxsafeinteger {*}{
                     } -minlength $o_minlength           {*}{
                     } -alphabet $o_alphabet_configured  {*}{
                     }
                 ]
             }
-            set fullmatch [tcl::prefix::match -error "" {-alphabet -minlength -blocklist} $option]
+            set fullmatch [tcl::prefix::match -error "" {-alphabet -minlength -blocklist -maxsafeinteger} $option]
             switch -exact -- $fullmatch {
-                -alphabet   {return $o_alphabet_configured}
-                -minlength  {return $o_minlength}
-                -blocklist  {return $o_blocklist}
+                -alphabet           {return $o_alphabet_configured}
+                -minlength          {return $o_minlength}
+                -blocklist          {return $o_blocklist}
+                -maxsafeinteger     {return $o_maxsafeinteger}
                 default {
-                    error "sqids::idscope config: unknown option '$option'. Known options:-alphabet -minlength -blocklist."
+                    error "sqids::idscope config: unknown option '$option'. Known options:-alphabet -minlength -blocklist -maxsafeinteger."
                 }
             }
         }
-        method encode {numlist} {
-            if {[llength $numlist] == 0} {return}
-            #cannot encode negative numbers, or non-integers.
-            foreach num $numlist {
-                #tcl 9 'string is integer' supports bignums - which can be arbitrarily large.
-                #tcl 8.6 'string is integer' is limited to 2**32-1
-                if {![string is integer -strict $num] || $num < 0} {
-                    error "sqids encode: can only encode non-negative integers. Invalid value: '$num'"
+        #review tcl8.7 behaves like tcl 9
+        #tcl 8.7 wasn't ever officially released (and won't be) - but it was available for a while and may exist in the wild.
+        if {[package vsatisfies [info tclversion] 8.7-]} {
+            #'string is integer' for tcl versions 8.7 and above supports bignums, which can be arbitrarily large.
+            method encode {numlist} {
+                if {[llength $numlist] == 0} {return}
+                #cannot encode negative numbers, or non-integers.
+                foreach num $numlist {
+                    if {![string is integer -strict $num] || $num < 0 || $num > $o_maxsafeinteger} {
+                        error "sqids encode: can only encode integers from 0 to $o_maxsafeinteger. Invalid value: '$num'"
+                    }
                 }
+                return [my EncodeNumbers $numlist]
             }
-            return [my EncodeNumbers $numlist]
+        } else {
+            #In tcl 8.6, 'string is integer' is limited to 2**32-1, use the now deprecated 'string is entier'.
+            #Otherwise - integer operations still support bignums.
+            #(versions below 8.6 not supported by this modules)
+            method encode {numlist} {
+                if {[llength $numlist] == 0} {return}
+                #cannot encode negative numbers, or non-integers.
+                foreach num $numlist {
+                    if {![string is entier -strict $num] || $num < 0 || $num > $o_maxsafeinteger} {
+                        error "sqids encode: can only encode integers from 0 to $o_maxsafeinteger. Invalid value: '$num'"
+                    }
+                }
+                return [my EncodeNumbers $numlist]
+            }
         }
         method EncodeNumbers {numlist {increment 0}} {
             #assert number of letters in o_alphabet and number of letters in local alpha are the same and don't effectively change during this function.
@@ -301,7 +339,15 @@ namespace eval sqids {
 }
 namespace eval sqids::data {
     variable default_alphabet {abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789}
+
     variable default_minlength 0
+
+    #arbitrary 1 googol limit (approx 2**332). We could go much higher e.g [string repeat 9 1000]
+    #Tcl bignums are limited by available memory and max string length (e.g approx 2**30 bytes?)
+    #- but speed of encoding and decoding will degrade as the number increases.
+    #Can be overridden by providing a -maxsafeinteger option to the idscope constructor.
+    variable MAX_SAFE_INTEGER [expr {"1[string repeat 0 100]"}]
+
     variable default_blocklist {
         0rgasm
         1d10t

@@ -32,25 +32,19 @@ namespace eval ::testspace {
 
     test "different inputs" {Test encode decode roundtrip with different numbers} {*}[
         #MAX_SAFE_INTEGER should be the biggest unsigned integer that the language can safely/mathematically support.
-        #tcl 9 supports bignums - so numbers can easily be bigger than for example u128
-        #Not clear if we should have a concept of MAX_SAFE_INTEGER in tcl 9 as they can be arbitrarily large.
-        #consider perhaps DOS regarding time to process for huge numbers?
-        #tested with 20_000 digit number - encoding took approximately 9 seconds on a threadripper.
-        #we will just build a 1000 digit decimal number and test that (approx 3ms on same machine). - REVIEW.
+        #tcl supports bignums - so numbers can easily be bigger than for example u128
+        #Not clear if there is really a concept of MAX_SAFE_INTEGER in tcl as they can be arbitrarily large.
+        #consider perhaps DOS regarding ram and time to process for huge numbers?
         #e.g
         #set bignum [expr {[string repeat "9" 1000]}] ;#1000 digits
-        #consider setting a MAX_SAFE_INTEGER within sqids to say 10000 (which takes ~0.5seconds to encode 5ms to decode)
-        #in the context of web urls - this is possibly big enough to start to get in to DOS territory,
+        #tested with 10,000 digits       - takes  ~0.5seconds to encode 5ms to decode
+        #tested with 20_000 digit number - encoding took approximately 9 seconds on a threadripper.
+        #in the context of web urls - 10,000 digits is possibly big enough to start to get in to DOS territory,
         #although presumably nobody is accepting huge inputs from unknown sources.
         #The usecases of huge numbers is unknown.
-
-        #tcl 8.6 doesn't support bignums in quite the same way.
-        #"string is integer" returns false for numbers bigger than 2**32-1 in tcl 8.6
-        #we could use 'string is entier' in 8.6 (deprecated in tcl 9)
-        #- but we should probably be conservative for now regarding the other mathematical operations and just consider
-        # MAX_SAFE_INTEGER to be 2**32-1 for the purposes of testing encoding of large numbers in tcl 8.6.
-        #REVIEW - we don't use any int() calls in expr calls in the sqids functions - so maybe we can support bigger numbers in tcl 8.6 than 2**32-1
-        #- todo - verify.
+        #we use a default of 1 googol (10**100) - which is approximately 2**332
+        #this takes on the order of a couple of hundreds of microseconds to encode and decode.
+        #- but this is somewhat arbitrary and can be overridden by providing a -maxsafeinteger option to the idscope constructor.
 
         #tcl 8.6 doesn't support underscores in numeric literals, but tcl 9 does.
         #We should test that underscores are supported in tcl 9, but not in tcl 8.6
@@ -60,14 +54,8 @@ namespace eval ::testspace {
         -setup $common -body {
             set s [sqids::idscope new]
 
-            #lassign [split [info tclversion] .] tclmajorv tclminorv
-            if {[package vsatisfies [info tclversion] 8.7-]} {
-                set MAX_SAFE_INTEGER [expr {[string repeat "9" 1000]}] ;#1000 digits (arbitrarily huge choice)
-                set numbers [list 0 0 0 1 2 3 100 1_000 100_000 1_000_000 $MAX_SAFE_INTEGER]
-            } else {
-                set MAX_SAFE_INTEGER [expr {2**32-1}]
-                set numbers [list 0 0 0 1 2 3 100 1000 100000 1000000 $MAX_SAFE_INTEGER]
-            }
+            set MAX_SAFE_INTEGER [$s config -maxsafeinteger]
+            set numbers [list 0 0 0 1 2 3 100 1000 100000 1000000 $MAX_SAFE_INTEGER]
 
             set id [$s encode $numbers]
             set returned_numbers [$s decode $id]
@@ -222,16 +210,8 @@ namespace eval ::testspace {
                 lappend result "FAIL: Expected error was not raised"
             }
 
-            #review tcl8.7 behaves like tcl 9
-            #tcl 8.7 wasn't ever officially released (and won't be) - but it was available for a while and may exist in the wild.
 
-            #lassign [split [info tclversion] .] tclmajorv tclminorv
-            if {[package vsatisfies [info tclversion] 8.7-]} {
-                #tcl 8.7 or greater
-                set MAX_SAFE_INTEGER [expr {[string repeat "9" 1000]}] ;#1000 digits (arbitrarily huge choice)
-            } else {
-                set MAX_SAFE_INTEGER [expr {2**32-1}]
-            }
+            set MAX_SAFE_INTEGER [$s config -maxsafeinteger]
 
             if {[catch {
                 $s encode [expr {$MAX_SAFE_INTEGER + 1}]

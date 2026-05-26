@@ -29,7 +29,7 @@ Either:
 Simple encode and decode at the tclsh prompt:
 ```tcl
 % package require sqids
-  0.1
+  0.3.1
 % sqids::idscope create s1
   ::s1
 % s1 encode {1 2 3}
@@ -43,6 +43,24 @@ simple encode with non-default parameters:
 package require sqids
 sqids::idscope create s2 -alphabet {abcdef0123456789} -minlength 6 -blocklist {} 
 set idstring [s2 encode {1 2 3}] ;#a83a2e
+```
+
+Tcl can support arbitrarily large integers (bignum)
+The default MAX_SAFE_INTEGER for sqids is set to 1 Googol (1 with 100 zeros)
+which is a huge number but can still be encoded within a couple of hundred microseconds.
+
+Numbers can be arbitrarily large at the cost of memory and encode/decode speed.
+
+To globally configure the default for all sqids::idscope intances to a smaller
+number to match some other language
+e.g
+```tcl
+set ::sqids::data::MAX_SAFE_INTEGER [expr {2**128}]
+```
+
+Alternatively the value can be configured per idscope instance: 
+```tcl
+sqids::idscope create s3 -maxsafeinteger [expr {2**64}]
 ```
 
 ## License
