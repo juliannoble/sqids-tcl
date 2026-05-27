@@ -94,6 +94,12 @@ namespace eval sqids {
                 set o_blocklist $opt_blocklist
                 set o_blocklist [string tolower $o_blocklist]
             }
+            #Considered pruning blocklist entries that are 3 chars or less,
+            #or that contain characters not in the alphabet, as they will never match any id and just add overhead
+            #to the is_blocked method.
+            #This however adds some object instantiation overhead.
+            #counterpoint - caller should provide an appropriate blocklist for the supplied alphabet.
+
             set opt_maxsafeinteger [dict get $opts -maxsafeinteger]
             if {$opt_maxsafeinteger eq ""} {
                 set o_maxsafeinteger $::sqids::data::MAX_SAFE_INTEGER
@@ -222,6 +228,10 @@ namespace eval sqids {
             set idlen [string length $idtest]
             if {$idlen < 3} {
                 #sqids rule: short ids less than 3 chars will not be blocked.
+                #(this is from the FAQ - but spec (code in isblocked) seems to contradict - saying <= 3 must match exactly)
+                #however - most implementations filter out blocklist entries shorter than 3 at construction time.
+                #- so effectively the FAQ seems right but the reference code implements it in a very roundabout and unintuitive way.
+                #REVIEW. Why are there no tests regarding such short ids?
                 return 0
             }
             if {$idlen == 3} {
@@ -233,6 +243,8 @@ namespace eval sqids {
                     if {[string length $blocked] <= 3} {
                         #sqids rule: blocklist entries of 3 chars  will only be blocked if they match the entire id exactly,
                         #so skip them in this loop as we've already checked for exact matches of the whole id when idlen == 3.  
+                        #note blocklist entries of 0 1 or 2 chars will never match any id - but in this implementation we leave
+                        #it to the caller to provide a sensible blocklist. Nevertheless if we encounter them we will just skip them here.
                         continue
                     }
                     set posn [string first $blocked $idtest]
