@@ -116,6 +116,7 @@ foreach fname $src_modules {
     puts "installing $tmname as $installed_file"
 
     set fd [open $installed_file w]
+    chan configure $fd -translation binary -encoding utf-8
     puts $fd $filedata; close $fd
 
     puts "Built $installed_file"
